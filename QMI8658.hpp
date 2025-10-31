@@ -141,11 +141,11 @@ class QMI8658 : public LibXR::Application
   };
 #pragma pack(pop)
 
-  QMI8658(LibXR::HardwareContainer& hw, LibXR::ApplicationManager& app, ODR output_freq,
+  QMI8658(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, ODR output_freq,
           GyroRange gyro_range, AcclRange accl_range, ModeLPF accl_lpf, ModeLPF gyro_lpf,
-          LibXR::Quaternion<float>&& rotation, LibXR::PID<float>::Param pid_param,
-          const char* gyro_topic_name, const char* accl_topic_name, const char* spi_name,
-          const char* cs_pin_name, const char* int_pin2_name, const char* pwm_name,
+          LibXR::Quaternion<float> &&rotation, LibXR::PID<float>::Param pid_param,
+          const char *gyro_topic_name, const char *accl_topic_name, const char *spi_name,
+          const char *cs_pin_name, const char *int_pin2_name, const char *pwm_name,
           float target_temperature)
       : output_freq_(output_freq),
         gyro_range_(gyro_range),
@@ -172,7 +172,7 @@ class QMI8658 : public LibXR::Application
 
     // INT: 记录 dt 并发起一次 SPI 读
     auto int_cb = LibXR::GPIO::Callback::Create(
-        [](bool in_isr, QMI8658* self)
+        [](bool in_isr, QMI8658 *self)
         {
           (void)in_isr;
           auto now = LibXR::Timebase::GetMicroseconds();
@@ -184,13 +184,12 @@ class QMI8658 : public LibXR::Application
     int_->RegisterCallback(int_cb);
 
     spi_cb_ = LibXR::SPI::OperationRW::Callback::Create(
-        [](bool in_isr, QMI8658* self, ErrorCode err)
+        [](bool in_isr, QMI8658 *self, ErrorCode err)
         {
-          (void)in_isr;
           self->cs_->Write(true);
           if (err == ErrorCode::OK)
           {
-            self->ParseData();
+            self->ParseData(in_isr);
 
             float dt_sec = std::max(1e-4f, self->dt_gyro_.ToSecondf());
             float duty = self->pid_heat_.Calculate(self->target_temperature_,
@@ -314,14 +313,14 @@ class QMI8658 : public LibXR::Application
     }
   }
 
-  void ParseData()
+  void ParseData(bool in_isr)
   {
     temperature_ = static_cast<float>(static_cast<uint16_t>(rw_buffer_.temp)) / 256.0f;
 
-    Eigen::Vector3f accl(rw_buffer_.accl[0], rw_buffer_.accl[1], rw_buffer_.accl[2]);
+    Eigen::Vector3f accl_raw(rw_buffer_.accl[0], rw_buffer_.accl[1], rw_buffer_.accl[2]);
     Eigen::Vector3f gyro_raw(rw_buffer_.gyro[0], rw_buffer_.gyro[1], rw_buffer_.gyro[2]);
 
-    accl *= GetAccelLSB();
+    accl_raw *= GetAccelLSB();
     Eigen::Vector3f gyro = gyro_raw * GetGyroLSB();
 
     if (in_cali_)
@@ -334,22 +333,24 @@ class QMI8658 : public LibXR::Application
 
     gyro -= gyro_offset_key_.data_;
 
-    accl_data_ = rotation_ * accl;
+    accl_data_ = rotation_ * accl_raw;
     gyro_data_ = rotation_ * gyro;
 
-    topic_accl_.Publish(accl_data_);
-    topic_gyro_.Publish(gyro_data_);
+    topic_accl_.PublishFromCallback(accl_data_, in_isr);
+    topic_gyro_.PublishFromCallback(gyro_data_, in_isr);
   }
 
-  static int CommandFunc(QMI8658* self, int argc, char** argv)
+  static int CommandFunc(QMI8658 *self, int argc, char **argv)
   {
     if (argc == 1)
     {
       LibXR::STDIO::Printf("Usage:\r\n");
       LibXR::STDIO::Printf(
-          "  show [time_ms] [interval_ms] - Print sensor data periodically.\r\n");
+          "  show [time_ms] [interval_ms] - Print sensor data "
+          "periodically.\r\n");
       LibXR::STDIO::Printf(
-          "  list_offset                  - Show current gyro calibration offset.\r\n");
+          "  list_offset                  - Show current gyro "
+          "calibration offset.\r\n");
       LibXR::STDIO::Printf(
           "  cali                         - Start gyroscope calibration.\r\n");
     }
@@ -357,7 +358,7 @@ class QMI8658 : public LibXR::Application
     {
       if (std::strcmp(argv[1], "list_offset") == 0)
       {
-        LibXR::STDIO::Printf("Current calibration offset (dps) - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf("Current calibration offset - x: %f, y: %f, z: %f\r\n",
                              self->gyro_offset_key_.data_.x(),
                              self->gyro_offset_key_.data_.y(),
                              self->gyro_offset_key_.data_.z());
@@ -371,7 +372,8 @@ class QMI8658 : public LibXR::Application
         self->in_cali_ = true;
 
         LibXR::STDIO::Printf(
-            "Starting gyroscope calibration. Please keep the device steady.\r\n");
+            "Starting gyroscope calibration. Please keep the "
+            "device steady.\r\n");
         LibXR::Thread::Sleep(3000);
         for (int i = 0; i < 60; ++i)
         {
@@ -390,7 +392,7 @@ class QMI8658 : public LibXR::Application
         self->gyro_offset_key_.data_.z() =
             static_cast<double>(self->gyro_cali_.data()[2]) / denom * self->GetGyroLSB();
 
-        LibXR::STDIO::Printf("Calibration result (dps) - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf("Calibration result - x: %f, y: %f, z: %f\r\n",
                              self->gyro_offset_key_.data_.x(),
                              self->gyro_offset_key_.data_.y(),
                              self->gyro_offset_key_.data_.z());
@@ -418,7 +420,7 @@ class QMI8658 : public LibXR::Application
         const float mean_z =
             static_cast<double>(self->gyro_cali_.data()[2]) / denom2 * self->GetGyroLSB();
 
-        LibXR::STDIO::Printf("Calibration error (dps) - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf("Calibration error - x: %f, y: %f, z: %f\r\n",
                              mean_x - self->gyro_offset_key_.data_.x(),
                              mean_y - self->gyro_offset_key_.data_.y(),
                              mean_z - self->gyro_offset_key_.data_.z());
@@ -438,7 +440,8 @@ class QMI8658 : public LibXR::Application
         while (time > 0)
         {
           LibXR::STDIO::Printf(
-              "Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x = %+5f, y = %+5f, z = %+5f "
+              "Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x "
+              "= %+5f, y = %+5f, z = %+5f "
               "| Temp: %+5f\r\n",
               self->accl_data_.x(), self->accl_data_.y(), self->accl_data_.z(),
               self->gyro_data_.x(), self->gyro_data_.y(), self->gyro_data_.z(),
@@ -480,10 +483,10 @@ class QMI8658 : public LibXR::Application
   RegRawData rw_buffer_{};
   Eigen::Matrix<float, 3, 1> gyro_data_, accl_data_;
   LibXR::Topic topic_gyro_, topic_accl_;
-  LibXR::GPIO* int_ = nullptr;
-  LibXR::GPIO* cs_ = nullptr;
-  LibXR::SPI* spi_ = nullptr;
-  LibXR::PWM* pwm_ = nullptr;
+  LibXR::GPIO *int_ = nullptr;
+  LibXR::GPIO *cs_ = nullptr;
+  LibXR::SPI *spi_ = nullptr;
+  LibXR::PWM *pwm_ = nullptr;
   LibXR::PID<float> pid_heat_;
   LibXR::Semaphore sem_spi_;
   LibXR::SPI::OperationRW::Callback spi_cb_;
