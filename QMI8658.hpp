@@ -334,8 +334,8 @@ class QMI8658 : public LibXR::Application
 
     gyro -= gyro_offset_key_.data_;
 
-    accl_data_ = accl * rotation_;
-    gyro_data_ = gyro * rotation_;
+    accl_data_ = rotation_ * accl;
+    gyro_data_ = rotation_ * gyro;
 
     topic_accl_.Publish(accl_data_);
     topic_gyro_.Publish(gyro_data_);
