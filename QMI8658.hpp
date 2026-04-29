@@ -184,10 +184,10 @@ class QMI8658 : public LibXR::Application
     int_->RegisterCallback(int_cb);
 
     spi_cb_ = LibXR::SPI::OperationRW::Callback::Create(
-        [](bool in_isr, QMI8658 *self, ErrorCode err)
+        [](bool in_isr, QMI8658 *self, LibXR::ErrorCode err)
         {
           self->cs_->Write(true);
-          if (err == ErrorCode::OK)
+          if (err == LibXR::ErrorCode::OK)
           {
             self->ParseData(in_isr);
 
@@ -248,7 +248,8 @@ class QMI8658 : public LibXR::Application
     {
       uint8_t data[128];
       for (int i = 0; i < 128; i++) data[i] = ReadSingle(i);
-      XR_LOG_ERROR("QMI8658 not found:%d, retrying...", data[QMI8658_WHO_AM_I]);
+      XR_LOG_ERROR("QMI8658 not found:%u, retrying...",
+                   static_cast<unsigned>(data[QMI8658_WHO_AM_I]));
       LibXR::Thread::Sleep(100);
     }
 
@@ -344,21 +345,18 @@ class QMI8658 : public LibXR::Application
   {
     if (argc == 1)
     {
-      LibXR::STDIO::Printf("Usage:\r\n");
-      LibXR::STDIO::Printf(
-          "  show [time_ms] [interval_ms] - Print sensor data "
-          "periodically.\r\n");
-      LibXR::STDIO::Printf(
-          "  list_offset                  - Show current gyro "
-          "calibration offset.\r\n");
-      LibXR::STDIO::Printf(
-          "  cali                         - Start gyroscope calibration.\r\n");
+      LibXR::STDIO::Printf<"Usage:\r\n">();
+      LibXR::STDIO::Printf<"  show [time_ms] [interval_ms] - Print sensor data "
+          "periodically.\r\n">();
+      LibXR::STDIO::Printf<"  list_offset                  - Show current gyro "
+          "calibration offset.\r\n">();
+      LibXR::STDIO::Printf<"  cali                         - Start gyroscope calibration.\r\n">();
     }
     else if (argc == 2)
     {
       if (std::strcmp(argv[1], "list_offset") == 0)
       {
-        LibXR::STDIO::Printf("Current calibration offset - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf<"Current calibration offset - x: %f, y: %f, z: %f\r\n">(
                              self->gyro_offset_key_.data_.x(),
                              self->gyro_offset_key_.data_.y(),
                              self->gyro_offset_key_.data_.z());
@@ -371,13 +369,12 @@ class QMI8658 : public LibXR::Application
         self->cali_counter_ = 0;
         self->in_cali_ = true;
 
-        LibXR::STDIO::Printf(
-            "Starting gyroscope calibration. Please keep the "
-            "device steady.\r\n");
+        LibXR::STDIO::Printf<"Starting gyroscope calibration. Please keep the "
+            "device steady.\r\n">();
         LibXR::Thread::Sleep(3000);
         for (int i = 0; i < 60; ++i)
         {
-          LibXR::STDIO::Printf("Progress: %d / 60\r\n", i + 1);
+          LibXR::STDIO::Printf<"Progress: %d / 60\r\n">(i + 1);
           LibXR::Thread::Sleep(1000);
         }
         self->in_cali_ = false;
@@ -392,19 +389,19 @@ class QMI8658 : public LibXR::Application
         self->gyro_offset_key_.data_.z() =
             static_cast<double>(self->gyro_cali_.data()[2]) / denom * self->GetGyroLSB();
 
-        LibXR::STDIO::Printf("Calibration result - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf<"Calibration result - x: %f, y: %f, z: %f\r\n">(
                              self->gyro_offset_key_.data_.x(),
                              self->gyro_offset_key_.data_.y(),
                              self->gyro_offset_key_.data_.z());
 
         // 第二次：采集 60s 评估误差
-        LibXR::STDIO::Printf("Analyzing calibration quality...\r\n");
+        LibXR::STDIO::Printf<"Analyzing calibration quality...\r\n">();
         self->gyro_cali_ = Eigen::Matrix<int64_t, 3, 1>(0, 0, 0);
         self->cali_counter_ = 0;
         self->in_cali_ = true;
         for (int i = 0; i < 60; ++i)
         {
-          LibXR::STDIO::Printf("Progress: %d / 60\r\n", i + 1);
+          LibXR::STDIO::Printf<"Progress: %d / 60\r\n">(i + 1);
           LibXR::Thread::Sleep(1000);
         }
         self->in_cali_ = false;
@@ -420,13 +417,13 @@ class QMI8658 : public LibXR::Application
         const float mean_z =
             static_cast<double>(self->gyro_cali_.data()[2]) / denom2 * self->GetGyroLSB();
 
-        LibXR::STDIO::Printf("Calibration error - x: %f, y: %f, z: %f\r\n",
+        LibXR::STDIO::Printf<"Calibration error - x: %f, y: %f, z: %f\r\n">(
                              mean_x - self->gyro_offset_key_.data_.x(),
                              mean_y - self->gyro_offset_key_.data_.y(),
                              mean_z - self->gyro_offset_key_.data_.z());
 
         self->gyro_offset_key_.Set(self->gyro_offset_key_.data_);
-        LibXR::STDIO::Printf("Calibration data saved.\r\n");
+        LibXR::STDIO::Printf<"Calibration data saved.\r\n">();
       }
     }
     else if (argc == 4)
@@ -439,10 +436,9 @@ class QMI8658 : public LibXR::Application
 
         while (time > 0)
         {
-          LibXR::STDIO::Printf(
-              "Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x "
+          LibXR::STDIO::Printf<"Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x "
               "= %+5f, y = %+5f, z = %+5f "
-              "| Temp: %+5f\r\n",
+              "| Temp: %+5f\r\n">(
               self->accl_data_.x(), self->accl_data_.y(), self->accl_data_.z(),
               self->gyro_data_.x(), self->gyro_data_.y(), self->gyro_data_.z(),
               self->temperature_);
@@ -453,7 +449,7 @@ class QMI8658 : public LibXR::Application
     }
     else
     {
-      LibXR::STDIO::Printf("Error: Invalid arguments.\r\n");
+      LibXR::STDIO::Printf<"Error: Invalid arguments.\r\n">();
       return -1;
     }
     return 0;
