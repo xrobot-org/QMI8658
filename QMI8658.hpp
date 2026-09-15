@@ -2,35 +2,8 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: 上海矽睿科技有限公司 QMI8658 6 轴惯性测量单元（IMU）的驱动模块 / Driver module for the QMI8658 6-axis Inertial Measurement Unit (IMU) from QST Corporation Limited.
-constructor_args:
-  - output_freq: QMI8658::ODR::ODR_896_8HZ
-  - gyro_range: QMI8658::GyroRange::DEG_2048DPS
-  - accl_range: QMI8658::AcclRange::ACCL_16G
-  - accl_lpf: QMI8658::ModeLPF::LFP_DISABLE
-  - gyro_lpf: QMI8658::ModeLPF::LFP_DISABLE
-  - rotation:
-      w: 1.0
-      x: 0.0
-      y: 0.0
-      z: 0.0
-  - pid_param:
-      k: 1.0
-      p: 0.0
-      i: 0.0
-      d: 0.0
-      i_limit: 0.0
-      out_limit: 0.0
-      cycle: false
-  - gyro_topic_name: "qmi8658_gyro"
-  - accl_topic_name: "qmi8658_accl"
-  - spi_name: "spi1"
-  - cs_pin_name: "spi1_cs"
-  - int_pin2_name: "spi1_int2"
-  - pwm_name: "pwm1"
-  - target_temperature: 45
-template_args: []
-required_hardware: spi_name cs_pin_name int_pin1_name int_pin2_name pwm_name ramfs database
+module_description: 上海矽睿科技有限公司 QMI8658 6 轴惯性测量单元（IMU）的驱动模块 / Driver module for the
+  QMI8658 6-axis Inertial Measurement Unit (IMU) from QST Corporation Limited.
 depends: []
 === END MANIFEST === */
 // clang-format on
@@ -40,14 +13,17 @@ depends: []
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
-#include "app_framework.hpp"
+#include "database.hpp"
 #include "gpio.hpp"
 #include "message.hpp"
 #include "pid.hpp"
 #include "pwm.hpp"
+#include "ramfs.hpp"
 #include "semaphore.hpp"
 #include "spi.hpp"
+#include "thread.hpp"
 #include "transform.hpp"
 
 #define QMI8658_WHO_AM_I 0x00
@@ -85,7 +61,7 @@ depends: []
 /* read burst length from TEMP_L to GYR_Z_H (14 bytes) */
 #define QMI8658_READ_LEN 14
 
-class QMI8658 : public LibXR::Application
+class QMI8658
 {
  public:
   static constexpr float M_DEG2RAD_MULT = 0.01745329251f;
@@ -141,12 +117,13 @@ class QMI8658 : public LibXR::Application
   };
 #pragma pack(pop)
 
-  QMI8658(LibXR::HardwareContainer &hw, LibXR::ApplicationManager &app, ODR output_freq,
-          GyroRange gyro_range, AcclRange accl_range, ModeLPF accl_lpf, ModeLPF gyro_lpf,
-          LibXR::Quaternion<float> &&rotation, LibXR::PID<float>::Param pid_param,
-          const char *gyro_topic_name, const char *accl_topic_name, const char *spi_name,
-          const char *cs_pin_name, const char *int_pin2_name, const char *pwm_name,
-          float target_temperature)
+  QMI8658(LibXR::GPIO& external_int_pin2_name, LibXR::GPIO& external_cs_pin_name,
+          LibXR::SPI& external_spi_name, LibXR::PWM& external_pwm_name,
+          LibXR::Database& external_database, LibXR::RamFS& external_ramfs,
+          ODR output_freq, GyroRange gyro_range, AcclRange accl_range, ModeLPF accl_lpf,
+          ModeLPF gyro_lpf, LibXR::Quaternion<float>&& rotation,
+          LibXR::PID<float>::Param pid_param, const char* gyro_topic_name,
+          const char* accl_topic_name, float target_temperature)
       : output_freq_(output_freq),
         gyro_range_(gyro_range),
         accel_range_(accl_range),
@@ -156,15 +133,14 @@ class QMI8658 : public LibXR::Application
         target_temperature_(target_temperature),
         topic_gyro_(LibXR::Topic::CreateTopic<decltype(gyro_data_)>(gyro_topic_name)),
         topic_accl_(LibXR::Topic::CreateTopic<decltype(accl_data_)>(accl_topic_name)),
-        int_(hw.template FindOrExit<LibXR::GPIO>({int_pin2_name})),
-        cs_(hw.template FindOrExit<LibXR::GPIO>({cs_pin_name})),
-        spi_(hw.template FindOrExit<LibXR::SPI>({spi_name})),
-        pwm_(hw.template FindOrExit<LibXR::PWM>({pwm_name})),
+        int_(std::addressof(external_int_pin2_name)),
+        cs_(std::addressof(external_cs_pin_name)),
+        spi_(std::addressof(external_spi_name)),
+        pwm_(std::addressof(external_pwm_name)),
         pid_heat_(pid_param),
         op_spi_block_(sem_spi_),
         cmd_file_(LibXR::RamFS::CreateFile("qmi8658", CommandFunc, this)),
-        gyro_offset_key_(*hw.template FindOrExit<LibXR::Database>({"database"}),
-                         "qmi8658_gyro_offset",
+        gyro_offset_key_(external_database, "qmi8658_gyro_offset",
                          Eigen::Matrix<float, 3, 1>(0.0f, 0.0f, 0.0f))
   {
     cs_->Write(true);
@@ -172,7 +148,7 @@ class QMI8658 : public LibXR::Application
 
     // INT: 记录 dt 并发起一次 SPI 读
     auto int_cb = LibXR::GPIO::Callback::Create(
-        [](bool in_isr, QMI8658 *self)
+        [](bool in_isr, QMI8658* self)
         {
           (void)in_isr;
           auto now = LibXR::Timebase::GetMicroseconds();
@@ -184,7 +160,7 @@ class QMI8658 : public LibXR::Application
     int_->RegisterCallback(int_cb);
 
     spi_cb_ = LibXR::SPI::OperationRW::Callback::Create(
-        [](bool in_isr, QMI8658 *self, LibXR::ErrorCode err)
+        [](bool in_isr, QMI8658* self, LibXR::ErrorCode err)
         {
           self->cs_->Write(true);
           if (err == LibXR::ErrorCode::OK)
@@ -208,11 +184,10 @@ class QMI8658 : public LibXR::Application
     Init();
     int_->EnableInterrupt();
 
-    hw.template FindOrExit<LibXR::RamFS>({"ramfs"})->Add(cmd_file_);
-    app.Register(*this);
+    external_ramfs.Add(cmd_file_);
   }
 
-  void OnMonitor() override {}
+  void OnMonitor() {}
 
   void WriteSingle(uint8_t reg, uint8_t data)
   {
@@ -341,25 +316,27 @@ class QMI8658 : public LibXR::Application
     topic_gyro_.PublishFromCallback(gyro_data_, in_isr);
   }
 
-  static int CommandFunc(QMI8658 *self, int argc, char **argv)
+  static int CommandFunc(QMI8658* self, int argc, char** argv)
   {
     if (argc == 1)
     {
       LibXR::STDIO::Printf<"Usage:\r\n">();
-      LibXR::STDIO::Printf<"  show [time_ms] [interval_ms] - Print sensor data "
+      LibXR::STDIO::Printf<
+          "  show [time_ms] [interval_ms] - Print sensor data "
           "periodically.\r\n">();
-      LibXR::STDIO::Printf<"  list_offset                  - Show current gyro "
+      LibXR::STDIO::Printf<
+          "  list_offset                  - Show current gyro "
           "calibration offset.\r\n">();
-      LibXR::STDIO::Printf<"  cali                         - Start gyroscope calibration.\r\n">();
+      LibXR::STDIO::Printf<
+          "  cali                         - Start gyroscope calibration.\r\n">();
     }
     else if (argc == 2)
     {
       if (std::strcmp(argv[1], "list_offset") == 0)
       {
         LibXR::STDIO::Printf<"Current calibration offset - x: %f, y: %f, z: %f\r\n">(
-                             self->gyro_offset_key_.data_.x(),
-                             self->gyro_offset_key_.data_.y(),
-                             self->gyro_offset_key_.data_.z());
+            self->gyro_offset_key_.data_.x(), self->gyro_offset_key_.data_.y(),
+            self->gyro_offset_key_.data_.z());
       }
       else if (std::strcmp(argv[1], "cali") == 0)
       {
@@ -369,7 +346,8 @@ class QMI8658 : public LibXR::Application
         self->cali_counter_ = 0;
         self->in_cali_ = true;
 
-        LibXR::STDIO::Printf<"Starting gyroscope calibration. Please keep the "
+        LibXR::STDIO::Printf<
+            "Starting gyroscope calibration. Please keep the "
             "device steady.\r\n">();
         LibXR::Thread::Sleep(3000);
         for (int i = 0; i < 60; ++i)
@@ -390,9 +368,8 @@ class QMI8658 : public LibXR::Application
             static_cast<double>(self->gyro_cali_.data()[2]) / denom * self->GetGyroLSB();
 
         LibXR::STDIO::Printf<"Calibration result - x: %f, y: %f, z: %f\r\n">(
-                             self->gyro_offset_key_.data_.x(),
-                             self->gyro_offset_key_.data_.y(),
-                             self->gyro_offset_key_.data_.z());
+            self->gyro_offset_key_.data_.x(), self->gyro_offset_key_.data_.y(),
+            self->gyro_offset_key_.data_.z());
 
         // 第二次：采集 60s 评估误差
         LibXR::STDIO::Printf<"Analyzing calibration quality...\r\n">();
@@ -418,9 +395,9 @@ class QMI8658 : public LibXR::Application
             static_cast<double>(self->gyro_cali_.data()[2]) / denom2 * self->GetGyroLSB();
 
         LibXR::STDIO::Printf<"Calibration error - x: %f, y: %f, z: %f\r\n">(
-                             mean_x - self->gyro_offset_key_.data_.x(),
-                             mean_y - self->gyro_offset_key_.data_.y(),
-                             mean_z - self->gyro_offset_key_.data_.z());
+            mean_x - self->gyro_offset_key_.data_.x(),
+            mean_y - self->gyro_offset_key_.data_.y(),
+            mean_z - self->gyro_offset_key_.data_.z());
 
         self->gyro_offset_key_.Set(self->gyro_offset_key_.data_);
         LibXR::STDIO::Printf<"Calibration data saved.\r\n">();
@@ -436,12 +413,13 @@ class QMI8658 : public LibXR::Application
 
         while (time > 0)
         {
-          LibXR::STDIO::Printf<"Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x "
+          LibXR::STDIO::Printf<
+              "Accel: x = %+5f, y = %+5f, z = %+5f | Gyro: x "
               "= %+5f, y = %+5f, z = %+5f "
-              "| Temp: %+5f\r\n">(
-              self->accl_data_.x(), self->accl_data_.y(), self->accl_data_.z(),
-              self->gyro_data_.x(), self->gyro_data_.y(), self->gyro_data_.z(),
-              self->temperature_);
+              "| Temp: %+5f\r\n">(self->accl_data_.x(), self->accl_data_.y(),
+                                  self->accl_data_.z(), self->gyro_data_.x(),
+                                  self->gyro_data_.y(), self->gyro_data_.z(),
+                                  self->temperature_);
           LibXR::Thread::Sleep(delay);
           time -= delay;
         }
@@ -479,10 +457,10 @@ class QMI8658 : public LibXR::Application
   RegRawData rw_buffer_{};
   Eigen::Matrix<float, 3, 1> gyro_data_, accl_data_;
   LibXR::Topic topic_gyro_, topic_accl_;
-  LibXR::GPIO *int_ = nullptr;
-  LibXR::GPIO *cs_ = nullptr;
-  LibXR::SPI *spi_ = nullptr;
-  LibXR::PWM *pwm_ = nullptr;
+  LibXR::GPIO* int_ = nullptr;
+  LibXR::GPIO* cs_ = nullptr;
+  LibXR::SPI* spi_ = nullptr;
+  LibXR::PWM* pwm_ = nullptr;
   LibXR::PID<float> pid_heat_;
   LibXR::Semaphore sem_spi_;
   LibXR::SPI::OperationRW::Callback spi_cb_;
