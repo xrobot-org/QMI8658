@@ -202,8 +202,6 @@ class QMI8658
     ramfs.Add(cmd_file_);
   }
 
-  void OnMonitor() {}
-
   void WriteSingle(uint8_t reg, uint8_t data)
   {
     cs_->Write(false);
