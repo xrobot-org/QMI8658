@@ -226,11 +226,10 @@ class QMI8658
     auto int_cb = LibXR::GPIO::Callback::Create(
         [](bool in_isr, QMI8658* self)
         {
-          (void)in_isr;
           auto now = LibXR::Timebase::GetMicroseconds();
           self->dt_gyro_ = now - self->last_gyro_int_time_;
           self->last_gyro_int_time_ = now;
-          self->ReadData();
+          self->ReadData(in_isr);
         },
         this);
     int_->RegisterCallback(int_cb);
@@ -298,17 +297,23 @@ class QMI8658
   }
 
   /**
-   * @brief 发起一次从 TEMP_L 起的 14 字节连续读，完成后由 SPI 回调解析。
-   *        Start a 14-byte burst read from TEMP_L; the SPI callback parses it on
-   *        completion.
+   * @brief 发起一次从 TEMP_L 起的 14 字节异步连续读，完成后由 SPI 回调解析并释放片选。
+   *        Start an asynchronous 14-byte burst read from TEMP_L; the SPI callback parses
+   *        it and releases the chip select on completion.
+   *
+   * @param in_isr 是否在中断上下文中调用。
+   *               Whether called from interrupt context.
    */
-  void ReadData()
+  void ReadData(bool in_isr = false)
   {
     cs_->Write(false);
-    // 连续读：先写起始寄存器 + 读位(0x80)，再读 14 字节到结构体
-    uint8_t reg = QMI8658_TEMP_L | 0x80;
-    spi_->Write(reg, op_spi_block_);
-    spi_->Read(rw_buffer_, op_spi_cb_);
+    // 连续读：MemRead 自动补读位(0x80)，一次异步传输读 14 字节到结构体
+    auto ans = spi_->MemRead(QMI8658_TEMP_L, rw_buffer_, op_spi_cb_, in_isr);
+    if (ans != LibXR::ErrorCode::OK)
+    {
+      // 传输未启动，不会有回调，在此释放片选
+      cs_->Write(true);
+    }
   }
 
   /**
