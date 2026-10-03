@@ -2,8 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: 上海矽睿科技有限公司 QMI8658 6 轴惯性测量单元（IMU）的驱动模块 / Driver module for the
-  QMI8658 6-axis Inertial Measurement Unit (IMU) from QST Corporation Limited.
+module_description: QST QMI8658 6 轴惯性测量单元（IMU）的 SPI 驱动模块，带 PWM 恒温加热 / SPI driver module for the QST QMI8658 6-axis Inertial Measurement Unit (IMU) with PWM heater temperature control
 depends: []
 === END MANIFEST === */
 // clang-format on
