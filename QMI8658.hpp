@@ -180,14 +180,24 @@ class QMI8658
    * @param param 构造参数。
    *              Construction parameters.
    */
-  QMI8658(
-      LibXR::GPIO& int_pin2,
-      LibXR::GPIO& cs_pin,
-      LibXR::SPI& spi,
-      LibXR::PWM& pwm,
-      LibXR::Database& database,
-      LibXR::RamFS& ramfs,
-      const Param& param = {.output_freq = QMI8658::ODR::ODR_896_8HZ, .gyro_range = QMI8658::GyroRange::DEG_2048DPS, .accl_range = QMI8658::AcclRange::ACCL_16G, .accl_lpf = QMI8658::ModeLPF::LFP_DISABLE, .gyro_lpf = QMI8658::ModeLPF::LFP_DISABLE, .rotation = {1.0f, 0.0f, 0.0f, 0.0f}, .pid_param = {.k = 1.0f, .p = 0.0f, .i = 0.0f, .d = 0.0f, .i_limit = 0.0f, .out_limit = 0.0f, .cycle = false}, .gyro_topic_name = "qmi8658_gyro", .accl_topic_name = "qmi8658_accl", .target_temperature = 45})
+  QMI8658(LibXR::GPIO& int_pin2, LibXR::GPIO& cs_pin, LibXR::SPI& spi, LibXR::PWM& pwm,
+          LibXR::Database& database, LibXR::RamFS& ramfs,
+          const Param& param = {.output_freq = QMI8658::ODR::ODR_896_8HZ,
+                                .gyro_range = QMI8658::GyroRange::DEG_2048DPS,
+                                .accl_range = QMI8658::AcclRange::ACCL_16G,
+                                .accl_lpf = QMI8658::ModeLPF::LFP_DISABLE,
+                                .gyro_lpf = QMI8658::ModeLPF::LFP_DISABLE,
+                                .rotation = {1.0f, 0.0f, 0.0f, 0.0f},
+                                .pid_param = {.k = 1.0f,
+                                              .p = 0.0f,
+                                              .i = 0.0f,
+                                              .d = 0.0f,
+                                              .i_limit = 0.0f,
+                                              .out_limit = 0.0f,
+                                              .cycle = false},
+                                .gyro_topic_name = "qmi8658_gyro",
+                                .accl_topic_name = "qmi8658_accl",
+                                .target_temperature = 45})
       : output_freq_(param.output_freq),
         gyro_range_(param.gyro_range),
         accel_range_(param.accl_range),
@@ -195,8 +205,10 @@ class QMI8658
         gyro_lpf_(param.gyro_lpf),
         rotation_(param.rotation),
         target_temperature_(param.target_temperature),
-        topic_gyro_(LibXR::Topic::CreateTopic<decltype(gyro_data_)>(param.gyro_topic_name)),
-        topic_accl_(LibXR::Topic::CreateTopic<decltype(accl_data_)>(param.accl_topic_name)),
+        topic_gyro_(
+            LibXR::Topic::CreateTopic<decltype(gyro_data_)>(param.gyro_topic_name)),
+        topic_accl_(
+            LibXR::Topic::CreateTopic<decltype(accl_data_)>(param.accl_topic_name)),
         int_(std::addressof(int_pin2)),
         cs_(std::addressof(cs_pin)),
         spi_(std::addressof(spi)),
@@ -241,7 +253,7 @@ class QMI8658
         this);
     op_spi_cb_ = LibXR::SPI::OperationRW(spi_cb_);
 
-    pwm_->SetConfig({30000});
+    pwm_->SetConfig({.frequency = 30000});
     pwm_->SetDutyCycle(0.0f);
     pwm_->Enable();
 
