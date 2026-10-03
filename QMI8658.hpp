@@ -60,76 +60,126 @@ depends: []
 /* read burst length from TEMP_L to GYR_Z_H (14 bytes) */
 #define QMI8658_READ_LEN 14
 
+/**
+ * @brief QMI8658 6 轴 IMU 驱动，通过 SPI 读取并发布加速度与角速度，用 PWM 加热恒温。
+ *        Driver for the QMI8658 6-axis IMU; reads it over SPI, publishes acceleration
+ *        and angular rate, and regulates the chip temperature with a PWM heater.
+ */
 class QMI8658
 {
  public:
+  /// 角度转弧度系数 Degree to radian factor
   static constexpr float M_DEG2RAD_MULT = 0.01745329251f;
 
+  /**
+   * @brief 加速度计与陀螺仪的输出频率。
+   *        Output data rate of the accelerometer and gyroscope.
+   */
   enum class ODR : uint8_t
   {
-    ODR_7174_4HZ = 0,
-    ODR_3587_2HZ,
-    ODR_1793_6HZ,
-    ODR_896_8HZ,
-    ODR_448_4HZ,
-    ODR_224_2HZ,
-    ODR_112_1HZ,
-    ODR_56_05HZ,
-    ODR_28_025HZ
+    ODR_7174_4HZ = 0,  ///< 7174.4 Hz
+    ODR_3587_2HZ,      ///< 3587.2 Hz
+    ODR_1793_6HZ,      ///< 1793.6 Hz
+    ODR_896_8HZ,       ///< 896.8 Hz
+    ODR_448_4HZ,       ///< 448.4 Hz
+    ODR_224_2HZ,       ///< 224.2 Hz
+    ODR_112_1HZ,       ///< 112.1 Hz
+    ODR_56_05HZ,       ///< 56.05 Hz
+    ODR_28_025HZ       ///< 28.025 Hz
   };
 
+  /**
+   * @brief 加速度计量程。
+   *        Accelerometer range.
+   */
   enum class AcclRange : uint8_t
   {
-    ACCL_2G = 0,
-    ACCL_4G,
-    ACCL_8G,
-    ACCL_16G
+    ACCL_2G = 0,  ///< ±2 g
+    ACCL_4G,      ///< ±4 g
+    ACCL_8G,      ///< ±8 g
+    ACCL_16G      ///< ±16 g
   };
 
+  /**
+   * @brief 陀螺仪量程。
+   *        Gyroscope range.
+   */
   enum class GyroRange : uint8_t
   {
-    DEG_16DPS = 0,
-    DEG_32DPS,
-    DEG_64DPS,
-    DEG_128DPS,
-    DEG_256DPS,
-    DEG_512DPS,
-    DEG_1024DPS,
-    DEG_2048DPS
+    DEG_16DPS = 0,  ///< ±16 °/s
+    DEG_32DPS,      ///< ±32 °/s
+    DEG_64DPS,      ///< ±64 °/s
+    DEG_128DPS,     ///< ±128 °/s
+    DEG_256DPS,     ///< ±256 °/s
+    DEG_512DPS,     ///< ±512 °/s
+    DEG_1024DPS,    ///< ±1024 °/s
+    DEG_2048DPS     ///< ±2048 °/s
   };
 
+  /**
+   * @brief 低通滤波模式，枚举值等于寄存器取值。
+   *        Low-pass filter mode; the enumerator value equals the register value.
+   */
   enum class ModeLPF : uint8_t
   {
-    LPF_2_66 = 1,
-    LPF_3_63 = 3,
-    LPF_5_39 = 5,
-    LPF_13_37 = 7,
-    LFP_DISABLE = 0
+    LPF_2_66 = 1,    ///< 带宽 2.66% ODR Bandwidth 2.66% of ODR
+    LPF_3_63 = 3,    ///< 带宽 3.63% ODR Bandwidth 3.63% of ODR
+    LPF_5_39 = 5,    ///< 带宽 5.39% ODR Bandwidth 5.39% of ODR
+    LPF_13_37 = 7,   ///< 带宽 13.37% ODR Bandwidth 13.37% of ODR
+    LFP_DISABLE = 0  ///< 关闭低通滤波 Low-pass filter disabled
   };
 
 #pragma pack(push, 1)
+  /**
+   * @brief 从 TEMP_L 起连续读出的 14 字节原始数据。
+   *        The 14 raw bytes read in one burst starting at TEMP_L.
+   */
   struct RegRawData
   {
-    uint16_t temp;
-    int16_t accl[3];
-    int16_t gyro[3];
+    uint16_t temp;    ///< 温度原始值，256 LSB/℃ Raw temperature, 256 LSB/°C
+    int16_t accl[3];  ///< 加速度原始值 x、y、z Raw acceleration x, y, z
+    int16_t gyro[3];  ///< 角速度原始值 x、y、z Raw angular rate x, y, z
   };
 #pragma pack(pop)
 
+  /**
+   * @brief 构造参数。
+   *        Construction parameters.
+   */
   struct Param
   {
-    ODR output_freq;
-    GyroRange gyro_range;
-    AcclRange accl_range;
-    ModeLPF accl_lpf;
-    ModeLPF gyro_lpf;
-    LibXR::Quaternion<float> rotation;
-    LibXR::PID<float>::Param pid_param;
-    const char* gyro_topic_name;
-    const char* accl_topic_name;
-    float target_temperature;
+    ODR output_freq;       ///< 加速度计与陀螺仪输出频率 Output data rate of both sensors
+    GyroRange gyro_range;  ///< 陀螺仪量程 Gyroscope range
+    AcclRange accl_range;  ///< 加速度计量程 Accelerometer range
+    ModeLPF accl_lpf;      ///< 加速度计低通滤波 Accelerometer low-pass filter
+    ModeLPF gyro_lpf;      ///< 陀螺仪低通滤波 Gyroscope low-pass filter
+    LibXR::Quaternion<float> rotation;   ///< 安装姿态 (w,x,y,z) Mounting rotation
+    LibXR::PID<float>::Param pid_param;  ///< 加热 PID 参数 Heater PID parameters
+    const char* gyro_topic_name;         ///< 角速度 Topic 名称 Angular-rate Topic name
+    const char* accl_topic_name;         ///< 加速度 Topic 名称 Acceleration Topic name
+    float target_temperature;            ///< 目标芯片温度，℃ Target chip temperature, °C
   };
 
+  /**
+   * @brief 构造 QMI8658：配置加热 PWM，复位并配置芯片，使能 INT2 中断，注册命令。
+   *        Construct QMI8658: configure the heater PWM, reset and configure the chip,
+   *        enable the INT2 interrupt and register the `qmi8658` command.
+   *
+   * @param int_pin2 连接 INT2 引脚的中断 GPIO。
+   *                 Interrupt GPIO connected to the INT2 pin.
+   * @param cs_pin SPI 片选输出 GPIO。
+   *               SPI chip-select output GPIO.
+   * @param spi 芯片所在的 SPI 总线。
+   *            SPI bus of the chip.
+   * @param pwm 驱动加热电阻的 PWM 输出。
+   *            PWM output that drives the heater.
+   * @param database 保存陀螺仪零偏的数据库。
+   *                 Database that stores the gyroscope offset.
+   * @param ramfs 接收 `qmi8658` 命令的 RamFS。
+   *              RamFS that receives the `qmi8658` command.
+   * @param param 构造参数。
+   *              Construction parameters.
+   */
   QMI8658(
       LibXR::GPIO& int_pin2,
       LibXR::GPIO& cs_pin,
@@ -201,6 +251,15 @@ class QMI8658
     ramfs.Add(cmd_file_);
   }
 
+  /**
+   * @brief 写入一个寄存器。
+   *        Write one register.
+   *
+   * @param reg 寄存器地址。
+   *            Register address.
+   * @param data 写入值。
+   *             Value to write.
+   */
   void WriteSingle(uint8_t reg, uint8_t data)
   {
     cs_->Write(false);
@@ -208,6 +267,15 @@ class QMI8658
     cs_->Write(true);
   }
 
+  /**
+   * @brief 读取一个寄存器。
+   *        Read one register.
+   *
+   * @param reg 寄存器地址。
+   *            Register address.
+   * @return 寄存器值。
+   *         Register value.
+   */
   uint8_t ReadSingle(uint8_t reg)
   {
     uint8_t res = 0;
@@ -217,6 +285,11 @@ class QMI8658
     return res;
   }
 
+  /**
+   * @brief 发起一次从 TEMP_L 起的 14 字节连续读，完成后由 SPI 回调解析。
+   *        Start a 14-byte burst read from TEMP_L; the SPI callback parses it on
+   *        completion.
+   */
   void ReadData()
   {
     cs_->Write(false);
@@ -226,6 +299,11 @@ class QMI8658
     spi_->Read(rw_buffer_, op_spi_cb_);
   }
 
+  /**
+   * @brief 软复位芯片，等待 WHO_AM_I 为 0x05，再写入量程、频率、滤波和使能配置。
+   *        Soft-reset the chip, wait for WHO_AM_I to read 0x05, then write the range,
+   *        data rate, filter and enable configuration.
+   */
   void Init()
   {
     WriteSingle(QMI8658_RESET, 0x80);
@@ -259,6 +337,13 @@ class QMI8658
     WriteSingle(QMI8658_CTRL7, 0x03);
   }
 
+  /**
+   * @brief 当前加速度计量程对应的分辨率。
+   *        Resolution for the current accelerometer range.
+   *
+   * @return 每 LSB 对应的加速度，单位 g。
+   *         Acceleration per LSB in g.
+   */
   float GetAccelLSB()
   {
     switch (accel_range_)
@@ -276,6 +361,13 @@ class QMI8658
     }
   }
 
+  /**
+   * @brief 当前陀螺仪量程对应的分辨率。
+   *        Resolution for the current gyroscope range.
+   *
+   * @return 每 LSB 对应的角速度，单位 rad/s。
+   *         Angular rate per LSB in rad/s.
+   */
   float GetGyroLSB()
   {
     switch (gyro_range_)
@@ -301,6 +393,14 @@ class QMI8658
     }
   }
 
+  /**
+   * @brief 解析一次连续读的数据，减去陀螺仪零偏，按 rotation 旋转并发布。
+   *        Parse one burst read, subtract the gyroscope offset, rotate by rotation and
+   *        publish.
+   *
+   * @param in_isr 是否在中断上下文中调用。
+   *               Whether called from interrupt context.
+   */
   void ParseData(bool in_isr)
   {
     temperature_ = static_cast<float>(static_cast<uint16_t>(rw_buffer_.temp)) / 256.0f;
@@ -328,6 +428,19 @@ class QMI8658
     topic_gyro_.PublishFromCallback(gyro_data_, in_isr);
   }
 
+  /**
+   * @brief `qmi8658` 命令入口：`show`、`list_offset` 与 `cali`。
+   *        Entry of the `qmi8658` command: `show`, `list_offset` and `cali`.
+   *
+   * @param self QMI8658 实例。
+   *             QMI8658 instance.
+   * @param argc 参数个数。
+   *             Argument count.
+   * @param argv 参数列表。
+   *             Argument list.
+   * @return 成功为 0，参数无效为 -1。
+   *         0 on success, -1 for invalid arguments.
+   */
   static int CommandFunc(QMI8658* self, int argc, char** argv)
   {
     if (argc == 1)
