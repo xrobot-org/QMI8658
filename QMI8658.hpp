@@ -8,6 +8,7 @@ depends: []
 // clang-format on
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -248,6 +249,7 @@ class QMI8658
             duty = std::clamp(duty, 0.0f, 1.0f);
             self->pwm_->SetDutyCycle(duty);
           }
+          self->reading_.store(false);
         },
         this);
     op_spi_cb_ = LibXR::SPI::OperationRW(spi_cb_);
@@ -297,15 +299,25 @@ class QMI8658
   }
 
   /**
-   * @brief 发起一次从 TEMP_L 起的 14 字节异步连续读，完成后由 SPI 回调解析并释放片选。
+   * @brief 发起一次从 TEMP_L 起的 14 字节异步连续读，完成后由 SPI 回调解析并释放片选；
+   *        上一次连续读未完成时直接返回。
    *        Start an asynchronous 14-byte burst read from TEMP_L; the SPI callback parses
-   *        it and releases the chip select on completion.
+   *        it and releases the chip select on completion. Returns at once while the
+   *        previous burst read is still in flight.
    *
    * @param in_isr 是否在中断上下文中调用。
    *               Whether called from interrupt context.
    */
   void ReadData(bool in_isr = false)
   {
+    // 上一次连续读尚未完成时丢弃本次中断，片选保持不变
+    // Drop this interrupt while the previous burst read is in flight; the chip select
+    // stays as it is
+    bool idle = false;
+    if (!reading_.compare_exchange_strong(idle, true))
+    {
+      return;
+    }
     cs_->Write(false);
     // 连续读：MemRead 自动补读位(0x80)，一次异步传输读 14 字节到结构体
     auto ans = spi_->MemRead(QMI8658_TEMP_L, rw_buffer_, op_spi_cb_, in_isr);
@@ -313,6 +325,7 @@ class QMI8658
     {
       // 传输未启动，不会有回调，在此释放片选
       cs_->Write(true);
+      reading_.store(false);
     }
   }
 
@@ -607,6 +620,7 @@ class QMI8658
   LibXR::Semaphore sem_spi_;
   LibXR::SPI::OperationRW::Callback spi_cb_;
   LibXR::SPI::OperationRW op_spi_block_, op_spi_cb_;
+  std::atomic<bool> reading_{false};  ///< 异步连续读进行中 Burst read in flight
 
   LibXR::RamFS::File cmd_file_;
   LibXR::Database::Key<Eigen::Matrix<float, 3, 1>> gyro_offset_key_;
