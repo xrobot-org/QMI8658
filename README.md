@@ -111,7 +111,7 @@ An instance written by `xrobot instance add xrobot-org/QMI8658`, with the depend
 ```yaml
 modules:
   - module: xrobot-org/QMI8658
-    id: qmi8658
+    id: qmi8658_0
     args:
       - int_pin2: IMU_INT
       - cs_pin: ACCL_CS
