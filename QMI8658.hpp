@@ -363,7 +363,7 @@ class QMI8658
     WriteSingle(QMI8658_CTRL5,
                 (static_cast<uint8_t>(gyro_lpf_) << 4) | static_cast<uint8_t>(accl_lpf_));
 
-    // 7: SyncSample=true | 5: DRDY_DIS=0 | 4: gSN=0 | 1: gEN=1 | 0: aEN=1
+    // 7: SyncSample=0 | 5: DRDY_DIS=0 | 4: gSN=0 | 1: gEN=1 | 0: aEN=1
     WriteSingle(QMI8658_CTRL7, 0x03);
   }
 
