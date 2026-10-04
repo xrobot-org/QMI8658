@@ -56,7 +56,7 @@ QMI8658(LibXR::GPIO& int_pin2, LibXR::GPIO& cs_pin, LibXR::SPI& spi,
 
 依赖：
 
-- `int_pin2`：连接 INT2 引脚的中断 GPIO（数据就绪）。
+- `int_pin2`：连接 INT2 引脚的中断 GPIO。INT2 为推挽输出，按输出频率输出数据就绪（DRDY）脉冲：新数据可读时为上升沿，随后自动回到低电平。BSP 将该 GPIO 配置为上升沿中断。
 - `cs_pin`：SPI 片选输出 GPIO。
 - `spi`：芯片所在的 SPI 总线。
 - `pwm`：驱动加热电阻的 PWM 输出。
@@ -76,7 +76,7 @@ QMI8658(LibXR::GPIO& int_pin2, LibXR::GPIO& cs_pin, LibXR::SPI& spi,
 
 Dependencies:
 
-- `int_pin2`: the interrupt GPIO connected to the INT2 pin (data ready).
+- `int_pin2`: the interrupt GPIO connected to the INT2 pin. INT2 is a push-pull output that pulses data ready (DRDY) at the output data rate: a rising edge marks new data, and the pin returns low by itself shortly after. The BSP configures the GPIO as a rising-edge interrupt.
 - `cs_pin`: the SPI chip-select output GPIO.
 - `spi`: the SPI bus the chip is on.
 - `pwm`: the PWM output that drives the heater.
