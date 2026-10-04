@@ -2,7 +2,7 @@
 
 // clang-format off
 /* === MODULE MANIFEST V2 ===
-module_description: QST QMI8658 6 轴惯性测量单元（IMU）的 SPI 驱动模块，带 PWM 恒温加热 / SPI driver module for the QST QMI8658 6-axis Inertial Measurement Unit (IMU) with PWM heater temperature control
+module_description: QST QMI8658 6 轴惯性测量单元（IMU）的 SPI 驱动模块，带 PWM 恒温加热 / SPI Driver Module for the QST QMI8658 6-axis Inertial Measurement Unit (IMU) with PWM heater temperature control
 depends: []
 === END MANIFEST === */
 // clang-format on
