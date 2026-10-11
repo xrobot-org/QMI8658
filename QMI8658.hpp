@@ -348,7 +348,7 @@ class QMI8658
       LibXR::Thread::Sleep(100);
     }
 
-    // 6: ADDR_AI=1 | 5: BE=0 | 4: INT2EN=1 | 3: INT1EN=1 | 2: FIFO_INT_SEL=1
+    // 6: ADDR_AI=1 | 5: BE=1 | 4: INT2EN=1 | 3: INT1EN=0 | 2: FIFO_INT_SEL=1
     WriteSingle(QMI8658_CTRL1, 0x74);
 
     // 6-4: ACC_SCL | 3:0: ACC_ODR
